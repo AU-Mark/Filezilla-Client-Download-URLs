@@ -1,0 +1,25 @@
+{
+  "Product": "FileZilla Client",
+  "LastUpdated": "2026-02-25T10:00:00Z",
+  "SourceUrl": "https://filezilla-project.org/download.php?show_all=1",
+  "Latest": {
+    "Version": "3.68.1",
+    "ReleaseDate": null,
+    "UpdatedOn": "2026-02-25T10:00:00Z",
+    "Downloads": {
+      "win32": {
+        "Platform": "win32",
+        "Architecture": "32",
+        "Url": "https://dl4.cdn.filezilla-project.org/client/FileZilla_3.68.1_win32-setup.exe",
+        "Version": "3.68.1"
+      },
+      "win64": {
+        "Platform": "win64",
+        "Architecture": "64",
+        "Url": "https://dl4.cdn.filezilla-project.org/client/FileZilla_3.68.1_win64-setup.exe",
+        "Version": "3.68.1"
+      }
+    }
+  },
+  "Versions": {}
+}

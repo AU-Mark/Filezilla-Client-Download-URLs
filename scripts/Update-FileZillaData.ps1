@@ -95,6 +95,7 @@ function Get-FileZillaDataSelenium {
         # Create Chrome options with stealth settings to bypass bot protection
         $chromeOptions = New-Object OpenQA.Selenium.Chrome.ChromeOptions
         $chromeOptions.AddExcludedArgument("enable-automation")
+        $chromeOptions.AddAdditionalOption("useAutomationExtension", $false)
         $chromeOptions.AddArgument("--disable-blink-features=AutomationControlled")
         $chromeOptions.AddArgument("--disable-extensions")
         $chromeOptions.AddArgument("--disable-http2")
@@ -125,6 +126,89 @@ function Get-FileZillaDataSelenium {
         Write-Host "[FileZilla] Starting Chrome..." -ForegroundColor Cyan
         $driver = New-Object OpenQA.Selenium.Chrome.ChromeDriver($chromeService, $chromeOptions)
         $driver.Manage().Timeouts().PageLoad = [TimeSpan]::FromSeconds(60)
+
+        # ============================================================
+        # Selenium Stealth: Inject JavaScript via CDP to mask automation
+        # This patches browser properties that CloudFlare checks to
+        # detect headless/automated Chrome instances.
+        # Equivalent to Python's selenium-stealth / undetected-chromedriver.
+        # ============================================================
+        Write-Host "[FileZilla] Applying stealth patches via CDP..." -ForegroundColor Cyan
+
+        # Stealth JS payload - patches navigator properties, plugins, WebGL, etc.
+        $stealthJs = @'
+// Override navigator.webdriver to return undefined
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// Inject window.chrome object (missing in headless)
+window.chrome = {
+    runtime: {},
+    loadTimes: function() {},
+    csi: function() {},
+    app: { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } }
+};
+
+// Override navigator.plugins to show realistic plugins
+Object.defineProperty(navigator, 'plugins', {
+    get: () => {
+        const plugins = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+        ];
+        plugins.refresh = () => {};
+        return plugins;
+    }
+});
+
+// Override navigator.languages
+Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+
+// Override navigator.permissions.query to handle 'notifications' properly
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters)
+);
+
+// Fix missing connection property
+Object.defineProperty(navigator, 'connection', {
+    get: () => ({ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false })
+});
+
+// Override WebGL vendor and renderer (SwiftShader is a headless giveaway)
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) return 'Google Inc. (NVIDIA)';
+    if (parameter === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+    return getParameter.call(this, parameter);
+};
+
+// Prevent iframe contentWindow detection
+try {
+    const elementDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    Object.defineProperty(HTMLDivElement.prototype, 'offsetHeight', elementDescriptor);
+    Object.defineProperty(HTMLDivElement.prototype, 'offsetWidth', elementDescriptor);
+} catch(e) {}
+'@
+
+        # Inject stealth JS before any page navigation using CDP
+        # Page.addScriptToEvaluateOnNewDocument runs JS on every new page/frame
+        try {
+            $cdpParams = @{ source = $stealthJs }
+            $cdpJson = $cdpParams | ConvertTo-Json -Compress
+            $driver.ExecuteCdpCommand("Page.addScriptToEvaluateOnNewDocument", [System.Collections.Generic.Dictionary[string,object]]@{ source = $stealthJs })
+            Write-Host "[FileZilla] Stealth patches applied via CDP" -ForegroundColor Green
+        } catch {
+            Write-Warning "[FileZilla] CDP stealth injection failed: $($_.Exception.Message)"
+            Write-Warning "[FileZilla] Falling back to post-navigation JS injection"
+
+            # Fallback: navigate first, then inject (less effective but still helps)
+            $driver.Navigate().GoToUrl("about:blank")
+            $null = $driver.ExecuteScript($stealthJs)
+            Write-Host "[FileZilla] Stealth patches applied via ExecuteScript fallback" -ForegroundColor Yellow
+        }
 
         Write-Host "[FileZilla] Navigating to page..." -ForegroundColor Cyan
         $driver.Navigate().GoToUrl($Url)

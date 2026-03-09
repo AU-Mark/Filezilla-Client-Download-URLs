@@ -194,11 +194,13 @@ try {
 
         # Inject stealth JS before any page navigation using CDP
         # Page.addScriptToEvaluateOnNewDocument runs JS on every new page/frame
+        # NOTE: Selenium PS module v3.0.1 ships WebDriver.dll 3.141 which uses
+        #       ExecuteChromeCommand (not ExecuteCdpCommand - that's Selenium 4.x only)
         try {
             $cdpParams = [System.Collections.Generic.Dictionary[string,object]]::new()
             $cdpParams.Add("source", $stealthJs)
-            $driver.ExecuteCdpCommand("Page.addScriptToEvaluateOnNewDocument", $cdpParams)
-            Write-Host "[FileZilla] Stealth patches applied via CDP" -ForegroundColor Green
+            $driver.ExecuteChromeCommand("Page.addScriptToEvaluateOnNewDocument", $cdpParams)
+            Write-Host "[FileZilla] Stealth patches applied via CDP (ExecuteChromeCommand)" -ForegroundColor Green
         } catch {
             Write-Warning "[FileZilla] CDP stealth injection failed: $($_.Exception.Message)"
             Write-Warning "[FileZilla] Falling back to post-navigation JS injection"

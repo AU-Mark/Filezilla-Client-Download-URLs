@@ -195,7 +195,9 @@ try {
         # Inject stealth JS before any page navigation using CDP
         # Page.addScriptToEvaluateOnNewDocument runs JS on every new page/frame
         try {
-            $driver.ExecuteCdpCommand("Page.addScriptToEvaluateOnNewDocument", [System.Collections.Generic.Dictionary[string,object]]@{ source = $stealthJs })
+            $cdpParams = [System.Collections.Generic.Dictionary[string,object]]::new()
+            $cdpParams.Add("source", $stealthJs)
+            $driver.ExecuteCdpCommand("Page.addScriptToEvaluateOnNewDocument", $cdpParams)
             Write-Host "[FileZilla] Stealth patches applied via CDP" -ForegroundColor Green
         } catch {
             Write-Warning "[FileZilla] CDP stealth injection failed: $($_.Exception.Message)"

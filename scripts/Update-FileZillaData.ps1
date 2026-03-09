@@ -95,7 +95,6 @@ function Get-FileZillaDataSelenium {
         # Create Chrome options with stealth settings to bypass bot protection
         $chromeOptions = New-Object OpenQA.Selenium.Chrome.ChromeOptions
         $chromeOptions.AddExcludedArgument("enable-automation")
-        $chromeOptions.AddAdditionalOption("useAutomationExtension", $false)
         $chromeOptions.AddArgument("--disable-blink-features=AutomationControlled")
         $chromeOptions.AddArgument("--disable-extensions")
         $chromeOptions.AddArgument("--disable-http2")
@@ -196,8 +195,6 @@ try {
         # Inject stealth JS before any page navigation using CDP
         # Page.addScriptToEvaluateOnNewDocument runs JS on every new page/frame
         try {
-            $cdpParams = @{ source = $stealthJs }
-            $cdpJson = $cdpParams | ConvertTo-Json -Compress
             $driver.ExecuteCdpCommand("Page.addScriptToEvaluateOnNewDocument", [System.Collections.Generic.Dictionary[string,object]]@{ source = $stealthJs })
             Write-Host "[FileZilla] Stealth patches applied via CDP" -ForegroundColor Green
         } catch {

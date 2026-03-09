@@ -258,61 +258,60 @@ if (Test-Path $JsonPath) {
     }
 }
 
-# Check if version has changed
+# Check if version has changed (for archiving purposes only)
 $versionChanged = $true
 if ($existingData -and $existingData.Latest -and -not $SkipVersionCheck) {
     if ($existingData.Latest.Version -eq $fileZillaData.Version) {
-        Write-Host "[FileZilla] Version unchanged ($($fileZillaData.Version)). Skipping update." -ForegroundColor Yellow
+        Write-Host "[FileZilla] Version unchanged ($($fileZillaData.Version)). Refreshing download URLs." -ForegroundColor Yellow
         $versionChanged = $false
     }
 }
 
-if ($versionChanged) {
-    Write-Host "[FileZilla] Processing version update..." -ForegroundColor Cyan
+# Always update - CDN download URLs can rotate/expire independently of version changes
+Write-Host "[FileZilla] Processing update..." -ForegroundColor Cyan
 
-    # Initialize or update the JSON structure
-    $jsonOutput = if ($existingData) {
-        # Preserve existing structure
-        $existingData
-    } else {
-        # Create new structure
-        [PSCustomObject]@{
-            Product = "FileZilla Client"
-            LastUpdated = $timestamp
-            SourceUrl = $Url
-            Latest = $null
-            Versions = [PSCustomObject]@{}
-        }
+# Initialize or update the JSON structure
+$jsonOutput = if ($existingData) {
+    # Preserve existing structure
+    $existingData
+} else {
+    # Create new structure
+    [PSCustomObject]@{
+        Product = "FileZilla Client"
+        LastUpdated = $timestamp
+        SourceUrl = $Url
+        Latest = $null
+        Versions = [PSCustomObject]@{}
     }
-
-    # If there was a previous "Latest", move it to Versions
-    if ($existingData -and $existingData.Latest -and $existingData.Latest.Version -ne $fileZillaData.Version) {
-        $oldVersion = $existingData.Latest.Version
-        Write-Host "[FileZilla] Archiving previous version: $oldVersion" -ForegroundColor Cyan
-
-        # Add old version to Versions object
-        $jsonOutput.Versions | Add-Member -NotePropertyName $oldVersion -NotePropertyValue ([PSCustomObject]@{
-            Version = $existingData.Latest.Version
-            ReleaseDate = $existingData.Latest.ReleaseDate
-            ArchivedOn = $timestamp
-            Downloads = $existingData.Latest.Downloads
-        }) -Force
-    }
-
-    # Update Latest
-    $jsonOutput.Latest = [PSCustomObject]@{
-        Version = $fileZillaData.Version
-        ReleaseDate = $fileZillaData.ReleaseDate
-        UpdatedOn = $timestamp
-        Downloads = $fileZillaData.Downloads
-    }
-
-    $jsonOutput.LastUpdated = $timestamp
-
-    # Save JSON
-    $jsonOutput | ConvertTo-Json -Depth 10 | Out-File -FilePath $JsonPath -Encoding UTF8
-    Write-Host "[FileZilla] Saved to: $JsonPath" -ForegroundColor Green
 }
+
+# If the version changed, archive the previous "Latest" to Versions history
+if ($versionChanged -and $existingData -and $existingData.Latest -and $existingData.Latest.Version -ne $fileZillaData.Version) {
+    $oldVersion = $existingData.Latest.Version
+    Write-Host "[FileZilla] Archiving previous version: $oldVersion" -ForegroundColor Cyan
+
+    # Add old version to Versions object
+    $jsonOutput.Versions | Add-Member -NotePropertyName $oldVersion -NotePropertyValue ([PSCustomObject]@{
+        Version = $existingData.Latest.Version
+        ReleaseDate = $existingData.Latest.ReleaseDate
+        ArchivedOn = $timestamp
+        Downloads = $existingData.Latest.Downloads
+    }) -Force
+}
+
+# Always refresh Latest with current URLs from the download page
+$jsonOutput.Latest = [PSCustomObject]@{
+    Version = $fileZillaData.Version
+    ReleaseDate = $fileZillaData.ReleaseDate
+    UpdatedOn = $timestamp
+    Downloads = $fileZillaData.Downloads
+}
+
+$jsonOutput.LastUpdated = $timestamp
+
+# Save JSON
+$jsonOutput | ConvertTo-Json -Depth 10 | Out-File -FilePath $JsonPath -Encoding UTF8
+Write-Host "[FileZilla] Saved to: $JsonPath" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan

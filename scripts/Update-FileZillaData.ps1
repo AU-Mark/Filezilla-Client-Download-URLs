@@ -129,16 +129,54 @@ function Get-FileZillaDataSelenium {
         Write-Host "[FileZilla] Navigating to page..." -ForegroundColor Cyan
         $driver.Navigate().GoToUrl($Url)
 
-        # Wait for page to load and CloudFlare check to complete
-        Start-Sleep -Seconds 8
+        # Wait for CloudFlare challenge to resolve and real page to load
+        # CloudFlare interstitials show empty title or "Just a moment..." before resolving
+        $maxWaitSeconds = 30
+        $pollInterval = 2
+        $waited = 0
+        $pageReady = $false
 
-        Write-Host "[FileZilla] Page loaded: $($driver.Title)" -ForegroundColor Green
+        Write-Host "[FileZilla] Waiting for CloudFlare challenge to resolve (max ${maxWaitSeconds}s)..." -ForegroundColor Cyan
+
+        while ($waited -lt $maxWaitSeconds) {
+            Start-Sleep -Seconds $pollInterval
+            $waited += $pollInterval
+
+            $currentTitle = $driver.Title
+            $currentSource = $driver.PageSource
+
+            # CloudFlare challenge indicators - page not ready yet
+            $isCloudFlare = [string]::IsNullOrWhiteSpace($currentTitle) -or
+                            $currentTitle -match 'Just a moment' -or
+                            $currentTitle -match 'Attention Required' -or
+                            $currentSource -match 'cf-browser-verification' -or
+                            $currentSource -match 'challenge-platform'
+
+            if (-not $isCloudFlare -and $currentTitle.Length -gt 0) {
+                Write-Host "[FileZilla] Page ready after ${waited}s - Title: $currentTitle" -ForegroundColor Green
+                $pageReady = $true
+                break
+            }
+
+            Write-Host "[FileZilla] Waiting... (${waited}s) Title: '$currentTitle'" -ForegroundColor Yellow
+        }
+
+        if (-not $pageReady) {
+            # Log diagnostic info for debugging
+            $finalTitle = $driver.Title
+            $finalSource = $driver.PageSource
+            $sourcePreview = if ($finalSource.Length -gt 500) { $finalSource.Substring(0, 500) } else { $finalSource }
+            Write-Host "[FileZilla] DIAGNOSTIC - Final page title: '$finalTitle'" -ForegroundColor Red
+            Write-Host "[FileZilla] DIAGNOSTIC - Page source preview:" -ForegroundColor Red
+            Write-Host $sourcePreview -ForegroundColor Gray
+            throw "CloudFlare challenge was not resolved within ${maxWaitSeconds} seconds. Page title: '$finalTitle'"
+        }
 
         $html = $driver.PageSource
 
-        # Check for errors
-        if ($html -match "ERR_|can't be reached|Access Denied|blocked|cloudflare") {
-            throw "Page load failed or blocked by protection"
+        # Check for error pages that got past the CloudFlare wait
+        if ($html -match "ERR_|can't be reached|Access Denied") {
+            throw "Page load failed with error after CloudFlare check"
         }
 
         # Extract version information
@@ -156,7 +194,11 @@ function Get-FileZillaDataSelenium {
         }
 
         if (-not $version) {
-            Write-Error "[FileZilla] Could not extract version information"
+            # Log page info for debugging
+            $sourcePreview = if ($html.Length -gt 1000) { $html.Substring(0, 1000) } else { $html }
+            Write-Host "[FileZilla] DIAGNOSTIC - Page source preview (first 1000 chars):" -ForegroundColor Red
+            Write-Host $sourcePreview -ForegroundColor Gray
+            Write-Error "[FileZilla] Could not extract version information from page"
             return $null
         }
 
